@@ -1127,6 +1127,22 @@ def _mouse_click(flags):
 
 def calculate_all_coords(ends):
     d0, d1 = np.diff(ends, axis=0)[0]
+    
+    if d0 == 0 and d1 == 0:
+        return ends
+    
+    if d0 == 0:
+        return np.c_[
+            np.full(abs(d1) + 1, ends[0, 0], dtype=np.int32),
+            np.arange(ends[0, 1], ends[1, 1] + np.sign(d1), np.sign(d1), dtype=np.int32)
+        ]
+
+    if d1 == 0:
+        return np.c_[
+            np.arange(ends[0, 0], ends[1, 0] + np.sign(d0), np.sign(d0), dtype=np.int32),
+            np.full(abs(d0) + 1, ends[0, 1], dtype=np.int32)
+        ]
+    
     if np.abs(d0) > np.abs(d1):
         return np.c_[
             np.arange(
