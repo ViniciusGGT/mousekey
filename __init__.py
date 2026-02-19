@@ -26,23 +26,92 @@ from ctypes_rgb_values import get_rgb_values
 from ctypes_window_info import get_window_infos
 from flatten_everything import flatten_everything, ProtectedTuple
 
+# Declares at a higher level a function BlockInput(fBlockIt: bool) -> bool
+# Example:
+#     def block_input(fBlockIt: bool) -> bool:
+#         """Blocks or unblocks keyboard and mouse input events from reaching applications.
+#
+#         Args:
+#             fBlockIt: True to block input, False to unblock input.
+#
+#         Returns:
+#             bool: True if successful, False otherwise.
+#         """
+#         return ctypes.windll.user32.BlockInput(fBlockIt)
+# Declares on low level a function BlockInput(bool) -> bool
+# When BlockInput(True) is called it blocks user input,
+# When BlockInput(False) is called it unblocks user input
 BlockInput = ctypes.windll.user32.BlockInput
 BlockInput.argtypes = [wintypes.BOOL]
 BlockInput.restype = wintypes.BOOL
 
+# Declares at a higher level a module-level shared state accessor using sys.modules[__name__]
+# This pattern allows the module to store and mutate its own attributes at runtime,
+# making state (like `rightnow`) accessible and modifiable from anywhere that imports the module.
+# Example:
+#     # At module level:
+#     childcounter = sys.modules[__name__]  # Reference to this module itself
+#     childcounter.rightnow = None          # Shared mutable state, initially unset
+#
+#     # From any function within the module:
+#     def set_current(hwnd):
+#         """Store the current window handle as shared module-level state.
+#
+#         Args:
+#             hwnd: The window handle to store.
+#         """
+#         childcounter.rightnow = hwnd
+#
+#     def get_current():
+#         """Retrieve the current window handle from shared module-level state.
+#
+#         Returns:
+#             The stored window handle, or None if not set.
+#         """
+#         return childcounter.rightnow
 childcounter = sys.modules[__name__]
 childcounter.rightnow = None
 
 
 def get_elements_from_hwnd(hwnd):
+    """Retrieve all window elements associated with the given window handle.
+
+    Args:
+        hwnd: The window handle (HWND) to look up.
+
+    Returns:
+        dict: A dictionary with 'element' (the target window) and 'family' (all related elements).
+    """
     return _get_elements_from_coords(coordx=None, coordy=None, hwnd=hwnd)
 
 
 def get_elements_from_xy(x, y):
+    """Retrieve all window elements at the given screen coordinates.
+
+    Args:
+        x: The x screen coordinate.
+        y: The y screen coordinate.
+
+    Returns:
+        dict: A dictionary with 'element' (the window at that point) and 'family' (all related elements).
+    """
     return _get_elements_from_coords(coordx=x, coordy=y, hwnd=None)
 
 
 def _get_elements_from_coords(coordx=None, coordy=None, hwnd=None):
+    """Internal function to retrieve window elements from screen coordinates or a window handle.
+
+    Recursively discovers all related windows (parents, ancestors, children, siblings)
+    starting from the window found at the given coordinates or the specified handle.
+
+    Args:
+        coordx: The x screen coordinate (None if using hwnd).
+        coordy: The y screen coordinate (None if using hwnd).
+        hwnd: The window handle to look up (None if using coordinates).
+
+    Returns:
+        dict: A dictionary with 'element' (the target WindowInfo) and 'family' (list of all related WindowInfo).
+    """
     WindowInfoxx = namedtuple(
         "WindowInfo",
         "parent pid title windowtext hwnd length tid status coords_client dim_client coords_win dim_win class_name path",
@@ -86,6 +155,20 @@ def _get_elements_from_coords(coordx=None, coordy=None, hwnd=None):
 
 
 def get_all_infos_point(coordx=None, coordy=None, hwnd_=None):
+    """Gather comprehensive window information at a screen point or for a given window handle.
+
+    Collects the target window and its full family tree including parent, ancestor,
+    children, and all related windows. Uses the Windows API to enumerate windows.
+
+    Args:
+        coordx: The x screen coordinate (None if using hwnd_).
+        coordy: The y screen coordinate (None if using hwnd_).
+        hwnd_: The window handle to look up (None if using coordinates).
+
+    Returns:
+        dict: Keyed by (x, y) coordinates, containing 'foundelement', 'all_elements',
+              'ancestor', 'parent', 'all_children', and 'whole_family'.
+    """
     TRUE = 1
 
     class __WindowEnumerator(object):
@@ -102,6 +185,14 @@ def get_all_infos_point(coordx=None, coordy=None, hwnd_=None):
             return TRUE
 
     def find_elements(hwnd):
+        """Retrieve detailed information about a window and build a WindowInfo namedtuple.
+
+        Args:
+            hwnd: The window handle to inspect.
+
+        Returns:
+            list: A list of WindowInfo namedtuples with window details (pid, title, coords, etc.).
+        """
 
         user32 = ctypes.WinDLL("user32")
         kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
@@ -114,12 +205,21 @@ def get_all_infos_point(coordx=None, coordy=None, hwnd_=None):
         )
 
         def get_window_text(hWnd):
+            """Get the text content of a window by its handle.
+
+            Args:
+                hWnd: The window handle.
+
+            Returns:
+                str: The window's text content.
+            """
             length = ctypes.windll.user32.GetWindowTextLengthW(hWnd)
             buf = ctypes.create_unicode_buffer(length + 1)
             ctypes.windll.user32.GetWindowTextW(hWnd, buf, length + 1)
             return buf.value
 
         class RECT(ctypes.Structure):
+            """Represents a Win32 RECT structure defining a rectangle by its edges."""
             _fields_ = [
                 ("left", ctypes.c_long),
                 ("top", ctypes.c_long),
@@ -136,6 +236,18 @@ def get_all_infos_point(coordx=None, coordy=None, hwnd_=None):
 
         @WNDENUMPROCA
         def enum_proc2(hWnd, lParam):
+            """Callback function for window enumeration that collects detailed window info.
+
+            Gathers process ID, title, visibility status, client/window coordinates,
+            class name, and executable path for each enumerated window.
+
+            Args:
+                hWnd: Handle to the current window being enumerated.
+                lParam: Application-defined value (unused).
+
+            Returns:
+                bool: True to continue enumeration.
+            """
             status = "invisible"
             if user32.IsWindowVisible(hWnd):
                 status = "visible"
@@ -219,6 +331,14 @@ def get_all_infos_point(coordx=None, coordy=None, hwnd_=None):
             return []
 
     def GetParent(hWnd):
+        """Get the handle of the specified window's parent window.
+
+        Args:
+            hWnd: Handle to the child window.
+
+        Returns:
+            HWND: Handle to the parent window.
+        """
         _GetParent = ctypes.windll.user32.GetParent
         _GetParent.argtypes = [HWND]
         _GetParent.restype = HWND
@@ -227,6 +347,15 @@ def get_all_infos_point(coordx=None, coordy=None, hwnd_=None):
         return hWndParent
 
     def GetAncestor(hWnd, gaFlags=1):
+        """Get the handle of the ancestor window according to the specified flags.
+
+        Args:
+            hWnd: Handle to the window.
+            gaFlags: Ancestor type flag (1=parent, 2=root, 3=root owner). Defaults to 1.
+
+        Returns:
+            HWND: Handle to the ancestor window.
+        """
         _GetAncestor = ctypes.windll.user32.GetAncestor
         _GetAncestor.argtypes = [HWND, UINT]
         _GetAncestor.restype = HWND
@@ -235,12 +364,25 @@ def get_all_infos_point(coordx=None, coordy=None, hwnd_=None):
         return hWndParent
 
     def GetDesktopWindow():
+        """Get the handle of the desktop window.
+
+        Returns:
+            HWND: Handle to the desktop window.
+        """
         _GetDesktopWindow = ctypes.windll.user32.GetDesktopWindow
         _GetDesktopWindow.argtypes = []
         _GetDesktopWindow.restype = HWND
         return _GetDesktopWindow()
 
     def get_all_children(parent_hwnd):
+        """Enumerate all child windows of the specified parent window.
+
+        Args:
+            parent_hwnd: Handle to the parent window.
+
+        Returns:
+            list: A list of window handles (HWND) for all child windows.
+        """
         WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, ctypes.py_object)
 
         user32 = ctypes.WinDLL("user32")
@@ -338,6 +480,11 @@ def get_all_infos_point(coordx=None, coordy=None, hwnd_=None):
 
 
 def failsafe_kill():
+    """Emergency kill function that terminates the current process.
+
+    Attempts os._exit first, then falls back to taskkill commands
+    for both the current process and its parent.
+    """
     try:
         os._exit(1)
     except Exception:
@@ -353,11 +500,20 @@ def failsafe_kill():
 
 
 def start_failsafe(hotkey="ctrl+e"):
+    """Register a global hotkey that triggers an emergency process kill.
+
+    Args:
+        hotkey: The key combination to trigger the failsafe kill. Defaults to 'ctrl+e'.
+    """
     key_b.add_hotkey(hotkey, failsafe_kill)
 
 
-SHORT = ctypes.c_short
+SHORT = ctypes.c_short #defines in low level the data type short, which is a 16-bit signed integer
 
+# Virtual-Key Codes (VK Codes)
+# Uses hexadecimal values to represent specific keys on the keyboard in a high level. 
+# Used in Windows API functions to simulate or detect specific key presses or mouse actions.
+# Example: Press(VK_Z)  # Simulates pressing the "Z" key
 VK_LBUTTON = 0x01  # Left mouse button
 VK_RBUTTON = 0x02  # Right mouse button
 VK_CANCEL = 0x03  # Control-break processing
@@ -533,6 +689,11 @@ VK_ZOOM = 0xFB  # Zoom key
 VK_NONAME = 0xFC  # Reserved
 VK_PA1 = 0xFD  # PA1 key
 VK_OEM_CLEAR = 0xFE  # Clear key
+
+# allkeys dictionary
+# Maps human-readable key names to their corresponding virtual key codes.
+# Provides an abstraction layer for easier key handling in the application.
+# Example: allkeys["enter"] retrieves the virtual key code for the ENTER key.
 allkeys = {
     "control-break processing": 3,
     "backspace": 8,
@@ -892,36 +1053,45 @@ allkeys = {
     "reserved_": 252,
 }
 
-emptyLong = ctypes.c_ulong()
-user32 = ctypes.WinDLL("user32", use_last_error=True)
-INPUT_MOUSE = 0
-INPUT_KEYBOARD = 1
-INPUT_HARDWARE = 2
-KEYEVENTF_EXTENDEDKEY = 0x0001
-KEYEVENTF_KEYUP = 0x0002
-KEYEVENTF_UNICODE = 0x0004
-KEYEVENTF_SCANCODE = 0x0008
-MAPVK_VK_TO_VSC = 0
-wintypes.ULONG_PTR = wintypes.WPARAM
+emptyLong = ctypes.c_ulong()  # Defines an unsigned long integer for low-level operations
+user32 = ctypes.WinDLL("user32", use_last_error=True)  # Loads the user32.dll for Windows API functions
 
-MOUSEEVENTF_MOVE = 0x0001
-MOUSEEVENTF_LEFTDOWN = 0x0002
-MOUSEEVENTF_LEFTUP = 0x0004
-MOUSEEVENTF_ABSOLUTE = 0x8000
+# Input types for SendInput function
+INPUT_MOUSE = 0  # Represents mouse input
+INPUT_KEYBOARD = 1  # Represents keyboard input
+INPUT_HARDWARE = 2  # Represents hardware input
 
-MOUSEEVENTF_MIDDLEDOWN = 0x0020
-MOUSEEVENTF_MIDDLEUP = 0x0040
-MOUSEEVENTF_RIGHTDOWN = 0x0008
-MOUSEEVENTF_RIGHTUP = 0x0010
+# Keyboard event flags
+KEYEVENTF_EXTENDEDKEY = 0x0001  # Indicates an extended key (e.g., arrow keys)
+KEYEVENTF_KEYUP = 0x0002  # Indicates a key release
+KEYEVENTF_UNICODE = 0x0004  # Indicates a Unicode character input
+KEYEVENTF_SCANCODE = 0x0008  # Indicates a scan code input
 
+# MapVirtualKey translation types
+MAPVK_VK_TO_VSC = 0  # Translates a virtual-key code to a scan code
+
+# Mouse event flags
+MOUSEEVENTF_MOVE = 0x0001  # Indicates mouse movement
+MOUSEEVENTF_LEFTDOWN = 0x0002  # Indicates left mouse button press
+MOUSEEVENTF_LEFTUP = 0x0004  # Indicates left mouse button release
+MOUSEEVENTF_ABSOLUTE = 0x8000  # Indicates absolute mouse movement
+
+MOUSEEVENTF_MIDDLEDOWN = 0x0020  # Indicates middle mouse button press
+MOUSEEVENTF_MIDDLEUP = 0x0040  # Indicates middle mouse button release
+MOUSEEVENTF_RIGHTDOWN = 0x0008  # Indicates right mouse button press
+MOUSEEVENTF_RIGHTUP = 0x0010  # Indicates right mouse button release
+
+# Pointer size for 32-bit or 64-bit systems
 ULONG_PTR = ctypes.c_ulong if sizeof(ctypes.c_void_p) == 4 else ctypes.c_ulonglong
 
 
 class POINT_(ctypes.Structure):
+    """Ctypes structure representing a screen point with integer x and y coordinates."""
     _fields_ = [("x", ctypes.c_int), ("y", ctypes.c_int)]
 
 
 class CURSORINFO(ctypes.Structure):
+    """Ctypes structure containing global cursor information (size, flags, handle, position)."""
     _fields_ = [
         ("cbSize", ctypes.c_uint),
         ("flags", ctypes.c_uint),
@@ -931,6 +1101,10 @@ class CURSORINFO(ctypes.Structure):
 
 
 class MOUSEINPUT(ctypes.Structure):
+    """Ctypes structure for mouse input events used by the SendInput API.
+
+    Contains fields for coordinates, mouse data, flags, timestamp, and extra info.
+    """
     _fields_ = (
         ("dx", wintypes.LONG),
         ("dy", wintypes.LONG),
@@ -942,6 +1116,11 @@ class MOUSEINPUT(ctypes.Structure):
 
 
 class KEYBDINPUT(ctypes.Structure):
+    """Ctypes structure for keyboard input events used by the SendInput API.
+
+    Contains virtual key code, scan code, flags, timestamp, and extra info.
+    Auto-maps virtual key to scan code on init unless KEYEVENTF_UNICODE is set.
+    """
     _fields_ = (
         ("wVk", wintypes.WORD),
         ("wScan", wintypes.WORD),
@@ -957,6 +1136,7 @@ class KEYBDINPUT(ctypes.Structure):
 
 
 class HARDWAREINPUT(ctypes.Structure):
+    """Ctypes structure for hardware input events used by the SendInput API."""
     _fields_ = (
         ("uMsg", wintypes.DWORD),
         ("wParamL", wintypes.WORD),
@@ -965,32 +1145,69 @@ class HARDWAREINPUT(ctypes.Structure):
 
 
 class POINT(ctypes.Structure):
+    """Ctypes structure representing a screen point with LONG x and y coordinates."""
     _fields_ = [("x", ctypes.wintypes.LONG), ("y", ctypes.wintypes.LONG)]
 
 
 def get_cursor():
+    """Get the current cursor position on screen.
+
+    Returns:
+        tuple: A (x, y) tuple of the cursor's screen coordinates.
+    """
     pos = POINT_()
     user32.GetCursorPos(ctypes.byref(pos))
     return pos.x, pos.y
 
 
 class INPUT(ctypes.Structure):
+    """Ctypes structure for the Windows INPUT type used by SendInput.
+
+    Contains a type field (keyboard, mouse, or hardware) and a union of
+    the corresponding input structures.
+    """
     class _INPUT(ctypes.Union):
+        """Union of KEYBDINPUT, MOUSEINPUT, and HARDWAREINPUT structures."""
         _fields_ = (("ki", KEYBDINPUT), ("mi", MOUSEINPUT), ("hi", HARDWAREINPUT))
 
     _anonymous_ = ("_input",)
     _fields_ = (("type", wintypes.DWORD), ("_input", _INPUT))
 
 
+# LPINPUT is a pointer to the INPUT structure, which is used in the SendInput function.
+# It allows the program to send low-level input events (keyboard, mouse, or hardware) to the system.
 LPINPUT = ctypes.POINTER(INPUT)
 
 
 def _check_count(result, func, args):
+    """Error-checking callback for SendInput; raises WinError if no events were inserted.
+
+    Args:
+        result: The return value from SendInput (number of events inserted).
+        func: The ctypes function object (unused).
+        args: The original arguments passed to the function.
+
+    Returns:
+        The original args if successful.
+
+    Raises:
+        ctypes.WinError: If result is 0 (no events were inserted).
+    """
     if result == 0:
         raise ctypes.WinError(ctypes.get_last_error())
     return args
 
 
+# Declares at a higher level a function SendInput(nInputs: int, pInputs: LPINPUT, cbSize: int) -> int
+# This function is a high-level abstraction for the low-level Windows API SendInput function.
+# It allows sending synthetic input events (keyboard, mouse, or hardware) to the system.
+# Example:
+#     inputs = (INPUT * 1)()
+#     inputs[0].type = INPUT_KEYBOARD
+#     inputs[0].ki = KEYBDINPUT(wVk=VK_A)  # Simulate pressing the "A" key
+#     result = SendInput(len(inputs), ctypes.byref(inputs), ctypes.sizeof(inputs[0]))
+#     if result == 0:
+#         raise RuntimeError("Failed to send input events")
 user32.SendInput.errcheck = _check_count
 user32.SendInput.argtypes = (
     wintypes.UINT,  # nInputs
@@ -1000,6 +1217,12 @@ user32.SendInput.argtypes = (
 
 
 def Press(keycode, delay=0.5):
+    """Press and release a keyboard key using SendInput.
+
+    Args:
+        keycode: The key to press. Can be a string key name (looked up in allkeys) or an integer VK code.
+        delay: Time in seconds to hold the key down before releasing. Defaults to 0.5.
+    """
     if isinstance(keycode, str):
         hexKeyCode = allkeys.get(keycode)
     else:
@@ -1014,15 +1237,44 @@ def Press(keycode, delay=0.5):
 
 
 class DUMMYUNIONNAME(Union):
+    """Union of MOUSEINPUT, KEYBDINPUT, and HARDWAREINPUT for the alternative SendInput path."""
     _fields_ = [("mi", MOUSEINPUT), ("ki", KEYBDINPUT), ("hi", HARDWAREINPUT)]
 
 
+# Declares at a higher level a function SendInput(nInputs: int, pInputs: POINTER(INPUT), cbSize: int) -> int
+# This function is a high-level abstraction for the low-level Windows API SendInput function.
+# It allows sending synthetic input events (keyboard, mouse, or hardware) to the system.
+# Example:
+#     def send_input(nInputs: int, pInputs: POINTER(INPUT), cbSize: int) -> int:
+#         """
+#         High-level wrapper for the SendInput function.
+#         
+#         Args:
+#             nInputs: Number of input events to insert.
+#             pInputs: Pointer to an array of INPUT structures describing the input events.
+#             cbSize: Size of the INPUT structure in bytes.
+#         
+#         Returns:
+#             int: The number of events successfully inserted into the input stream.
+#         
+#         Raises:
+#             RuntimeError: If no events were successfully inserted.
+#         """
+#         result = lib.SendInput(nInputs, pInputs, cbSize)
+#         if result == 0:
+#             raise RuntimeError("Failed to send input events")
+#         return result
 lib = ctypes.WinDLL("user32")
 lib.SendInput.argtypes = wintypes.UINT, POINTER(INPUT), ctypes.c_int
 lib.SendInput.restype = wintypes.UINT
 
 
 def send_scancode(code):
+    """Send a keyboard scan code via SendInput (press and release).
+
+    Args:
+        code: The hardware scan code to send.
+    """
     i = INPUT()
     i.type = INPUT_KEYBOARD
     i.ki = KEYBDINPUT(0, code, KEYEVENTF_SCANCODE, 0, 0)
@@ -1032,6 +1284,11 @@ def send_scancode(code):
 
 
 def send_unicode(s):
+    """Send a string as Unicode keyboard input, one character at a time.
+
+    Args:
+        s: The string to type via Unicode keyboard events.
+    """
     i = INPUT()
     i.type = INPUT_KEYBOARD
     for c in s:
@@ -1041,17 +1298,9 @@ def send_unicode(s):
         lib.SendInput(1, byref(i), sizeof(INPUT))
 
 
-LPINPUT = ctypes.POINTER(INPUT)
-
-user32.SendInput.errcheck = _check_count
-user32.SendInput.argtypes = (
-    wintypes.UINT,
-    LPINPUT,
-    ctypes.c_int,
-)
-
 
 class MouseInput(ctypes.Structure):
+    """Alternative ctypes structure for mouse input events used with the secondary SendInput path."""
     _fields_ = [
         ("dx", ctypes.c_long),
         ("dy", ctypes.c_long),
@@ -1063,6 +1312,7 @@ class MouseInput(ctypes.Structure):
 
 
 class KeybdInput(ctypes.Structure):
+    """Alternative ctypes structure for keyboard input events used with the secondary SendInput path."""
     _fields_ = [
         ("wVk", WORD),
         ("wScan", WORD),
@@ -1073,22 +1323,36 @@ class KeybdInput(ctypes.Structure):
 
 
 class HardwareInput(ctypes.Structure):
+    """Alternative ctypes structure for hardware input events used with the secondary SendInput path."""
     _fields_ = [("uMsg", DWORD), ("wParamL", WORD), ("wParamH", WORD)]
 
 
 class InputList(ctypes.Union):
+    """Union that holds one of MouseInput, KeybdInput, or HardwareInput for the alternative input path."""
     _fields_ = [("mi", MouseInput), ("ki", KeybdInput), ("hi", HardwareInput)]
 
 
 class Input(ctypes.Structure):
+    """Alternative ctypes structure for SendInput combining a type field and an InputList union."""
     _fields_ = [("type", ctypes.c_ulong), ("inputList", InputList)]
 
 
 def get_resolution():
+    """Get the current screen resolution.
+
+    Returns:
+        tuple: A (width, height) tuple of the screen resolution in pixels.
+    """
     return user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
 
 
 def move_rel(x, y):
+    """Move the mouse cursor by a relative offset from its current position.
+
+    Args:
+        x: Horizontal offset in pixels (positive = right, negative = left).
+        y: Vertical offset in pixels (positive = down, negative = up).
+    """
     mouseFlag = MOUSEEVENTF_MOVE
     inputList = InputList()
     inputList.mi = MouseInput(x, y, 0, mouseFlag, 0, ctypes.pointer(emptyLong))
@@ -1102,6 +1366,14 @@ def move(
         x,
         y,
 ):
+    """Move the mouse cursor to an absolute screen position.
+
+    Converts pixel coordinates to the 0–65535 normalized range required by SendInput.
+
+    Args:
+        x: Target x coordinate in pixels.
+        y: Target y coordinate in pixels.
+    """
     relative = False
     mouseFlag = MOUSEEVENTF_MOVE
 
@@ -1121,11 +1393,26 @@ def move(
 
 
 def _mouse_click(flags):
+    """Perform a low-level mouse event using SendInput.
+
+    Args:
+        flags: MOUSEEVENTF_* flag(s) specifying the mouse action (e.g., LEFTDOWN, LEFTUP).
+    """
     x = INPUT(type=INPUT_MOUSE, mi=MOUSEINPUT(0, 0, 0, flags, 0, 0))
     user32.SendInput(1, ctypes.byref(x), ctypes.sizeof(INPUT))
 
 
 def calculate_all_coords(ends):
+    """Calculate all integer pixel coordinates along a straight line between two points.
+
+    Uses Bresenham-style interpolation along the dominant axis.
+
+    Args:
+        ends: A 2x2 numpy array [[x0, y0], [x1, y1]].
+
+    Returns:
+        numpy.ndarray: An Nx2 array of (x, y) integer coordinates.
+    """
     d0, d1 = np.diff(ends, axis=0)[0]
     
     if d0 == 0 and d1 == 0:
@@ -1172,6 +1459,17 @@ def calculate_all_coords(ends):
 
 
 def add_random_n_places(a, n, low=-10, high=10):
+    """Add random integer offsets to n randomly chosen elements of an array.
+
+    Args:
+        a: The input numpy array.
+        n: Number of elements to perturb.
+        low: Lower bound (inclusive) for random offsets. Defaults to -10.
+        high: Upper bound (exclusive) for random offsets. Defaults to 10.
+
+    Returns:
+        numpy.ndarray: A copy of the array with random offsets applied.
+    """
     out = a.astype(int)
     idx = np.random.choice(a.size, n, replace=False)
     out.flat[idx] += np.random.randint(low=low, high=high, size=n)
@@ -1188,6 +1486,21 @@ def natural_mouse_movement(
         print_coords=True,
         percent=90,
 ):
+    """Move the mouse to (x, y) using a human-like, slightly randomized path.
+
+    Calculates a path from the current cursor position to the target, adds random
+    variation, applies logarithmic easing, and moves the cursor step by step.
+
+    Args:
+        x: Target x coordinate.
+        y: Target y coordinate.
+        min_variation: Minimum random pixel deviation per step. Defaults to -2.
+        max_variation: Maximum random pixel deviation per step. Defaults to 2.
+        use_every: Use every Nth point of the path (higher = faster, less smooth). Defaults to 1.
+        sleeptime: Tuple of (min, max) sleep time in seconds between steps. Defaults to (0.005, 0.009).
+        print_coords: Whether to print coordinates during movement. Defaults to True.
+        percent: Percentage of path points to apply random variation to. Defaults to 90.
+    """
     nowx, nowy = get_cursor()
     coordtomove = x, y
     futx, futy = coordtomove
@@ -1220,6 +1533,15 @@ def left_click_xy_natural_relative(
         sleeptime=(0.00005, 0.00009),
         print_coords=True,
 ):
+    """Move the mouse naturally by a relative offset and perform a left click.
+
+    Args:
+        x: Relative x offset in pixels.
+        y: Relative y offset in pixels.
+        delay: Time in seconds between mouse down and up. Defaults to 0.1.
+        sleeptime: Tuple of (min, max) sleep between movement steps. Defaults to (0.00005, 0.00009).
+        print_coords: Whether to print coordinates during movement. Defaults to True.
+    """
     natural_mouse_movement_relative(
         x,
         y,
@@ -1230,6 +1552,17 @@ def left_click_xy_natural_relative(
 
 
 def log_split(*args):
+    """Split an iterable into logarithmically growing chunks.
+
+    Each successive chunk contains one more element than the previous.
+    If multiple iterables are given, they are zipped together first.
+
+    Args:
+        *args: One or more iterables to split.
+
+    Yields:
+        list: Successive chunks of increasing size.
+    """
     def logsplit(lst):
         iterator = iter(lst)
         for n, e in enumerate(iterator):
@@ -1249,6 +1582,16 @@ def natural_mouse_movement_relative(
         sleeptime=(0.00005, 0.00009),
         print_coords=True,
 ):
+    """Move the mouse by a relative offset using natural, human-like motion.
+
+    Computes a smooth path from (0,0) to (x*2, y*2) using incremental relative moves.
+
+    Args:
+        x: Relative x offset in pixels.
+        y: Relative y offset in pixels.
+        sleeptime: Tuple of (min, max) sleep between movement steps. Defaults to (0.00005, 0.00009).
+        print_coords: Whether to print coordinates during movement. Defaults to True.
+    """
     nowx, nowy = 0, 0
     coordtomove = x * 2, y * 2
     futx, futy = coordtomove
@@ -1267,36 +1610,54 @@ def natural_mouse_movement_relative(
 
 
 def left_click(delay=0.1):
+    """Perform a left mouse click at the current cursor position.
+
+    Args:
+        delay: Time in seconds between mouse down and up events. Defaults to 0.1.
+    """
     _mouse_click(MOUSEEVENTF_LEFTDOWN)
     time.sleep(delay)
     _mouse_click(MOUSEEVENTF_LEFTUP)
 
 
 def left_mouse_down():
+    """Press and hold the left mouse button."""
     _mouse_click(MOUSEEVENTF_LEFTDOWN)
 
 
 def left_mouse_up():
+    """Release the left mouse button."""
     _mouse_click(MOUSEEVENTF_LEFTUP)
 
 
 def right_mouse_down():
+    """Press and hold the right mouse button."""
     _mouse_click(MOUSEEVENTF_RIGHTDOWN)
 
 
 def right_mouse_up():
+    """Release the right mouse button."""
     _mouse_click(MOUSEEVENTF_RIGHTUP)
 
 
 def middle_mouse_down():
+    """Press and hold the middle mouse button."""
     _mouse_click(MOUSEEVENTF_MIDDLEDOWN)
 
 
 def middle_mouse_up():
+    """Release the middle mouse button."""
     _mouse_click(MOUSEEVENTF_MIDDLEUP)
 
 
 def left_click_xy(x, y, delay=0.1):
+    """Move the mouse to (x, y) and perform a left click.
+
+    Args:
+        x: Target x coordinate.
+        y: Target y coordinate.
+        delay: Time in seconds between mouse down and up. Defaults to 0.1.
+    """
     move(x, y)
     left_click(delay=delay)
 
@@ -1312,6 +1673,19 @@ def left_click_xy_natural(
         print_coords=True,
         percent=90,
 ):
+    """Move the mouse naturally to (x, y) and perform a left click.
+
+    Args:
+        x: Target x coordinate.
+        y: Target y coordinate.
+        delay: Time in seconds between mouse down and up. Defaults to 0.1.
+        min_variation: Minimum random pixel deviation per step. Defaults to -3.
+        max_variation: Maximum random pixel deviation per step. Defaults to 3.
+        use_every: Use every Nth path point. Defaults to 4.
+        sleeptime: Tuple of (min, max) sleep between steps. Defaults to (0.005, 0.009).
+        print_coords: Whether to print coordinates. Defaults to True.
+        percent: Percentage of path points to randomize. Defaults to 90.
+    """
     natural_mouse_movement(
         x,
         y,
@@ -1326,12 +1700,24 @@ def left_click_xy_natural(
 
 
 def right_click(delay=0.1):
+    """Perform a right mouse click at the current cursor position.
+
+    Args:
+        delay: Time in seconds between mouse down and up events. Defaults to 0.1.
+    """
     _mouse_click(MOUSEEVENTF_RIGHTDOWN)
     time.sleep(delay)
     _mouse_click(MOUSEEVENTF_RIGHTUP)
 
 
 def right_click_xy(x, y, delay=0.1):
+    """Move the mouse to (x, y) and perform a right click.
+
+    Args:
+        x: Target x coordinate.
+        y: Target y coordinate.
+        delay: Time in seconds between mouse down and up. Defaults to 0.1.
+    """
     move(x, y)
     right_click(delay=delay)
 
@@ -1347,6 +1733,19 @@ def right_click_xy_natural(
         print_coords=True,
         percent=90,
 ):
+    """Move the mouse naturally to (x, y) and perform a right click.
+
+    Args:
+        x: Target x coordinate.
+        y: Target y coordinate.
+        delay: Time in seconds between mouse down and up. Defaults to 0.1.
+        min_variation: Minimum random pixel deviation. Defaults to -1.
+        max_variation: Maximum random pixel deviation. Defaults to 1.
+        use_every: Use every Nth path point. Defaults to 1.
+        sleeptime: Tuple of (min, max) sleep between steps. Defaults to (0.005, 0.009).
+        print_coords: Whether to print coordinates. Defaults to True.
+        percent: Percentage of path points to randomize. Defaults to 90.
+    """
     natural_mouse_movement(
         x,
         y,
@@ -1367,6 +1766,15 @@ def right_click_xy_natural_relative(
         sleeptime=(0.00005, 0.00009),
         print_coords=True,
 ):
+    """Move the mouse naturally by a relative offset and perform a right click.
+
+    Args:
+        x: Relative x offset in pixels.
+        y: Relative y offset in pixels.
+        delay: Time in seconds between mouse down and up. Defaults to 0.1.
+        sleeptime: Tuple of (min, max) sleep between steps. Defaults to (0.00005, 0.00009).
+        print_coords: Whether to print coordinates. Defaults to True.
+    """
     natural_mouse_movement_relative(
         x,
         y,
@@ -1377,12 +1785,24 @@ def right_click_xy_natural_relative(
 
 
 def middle_click(delay=0.1):
+    """Perform a middle mouse click at the current cursor position.
+
+    Args:
+        delay: Time in seconds between mouse down and up events. Defaults to 0.1.
+    """
     _mouse_click(MOUSEEVENTF_MIDDLEDOWN)
     time.sleep(delay)
     _mouse_click(MOUSEEVENTF_MIDDLEUP)
 
 
 def middle_click_xy(x, y, delay=0.1):
+    """Move the mouse to (x, y) and perform a middle click.
+
+    Args:
+        x: Target x coordinate.
+        y: Target y coordinate.
+        delay: Time in seconds between mouse down and up. Defaults to 0.1.
+    """
     move(x, y)
     middle_click(delay=delay)
 
@@ -1398,6 +1818,19 @@ def middle_click_xy_natural(
         print_coords=True,
         percent=90,
 ):
+    """Move the mouse naturally to (x, y) and perform a middle click.
+
+    Args:
+        x: Target x coordinate.
+        y: Target y coordinate.
+        delay: Time in seconds between mouse down and up. Defaults to 0.1.
+        min_variation: Minimum random pixel deviation. Defaults to -3.
+        max_variation: Maximum random pixel deviation. Defaults to 3.
+        use_every: Use every Nth path point. Defaults to 4.
+        sleeptime: Tuple of (min, max) sleep between steps. Defaults to (0.005, 0.009).
+        print_coords: Whether to print coordinates. Defaults to True.
+        percent: Percentage of path points to randomize. Defaults to 90.
+    """
     natural_mouse_movement(
         x,
         y,
@@ -1418,6 +1851,15 @@ def middle_click_xy_relative(
         sleeptime=(0.00005, 0.00009),
         print_coords=True,
 ):
+    """Move the mouse naturally by a relative offset and perform a middle click.
+
+    Args:
+        x: Relative x offset in pixels.
+        y: Relative y offset in pixels.
+        delay: Time in seconds between mouse down and up. Defaults to 0.1.
+        sleeptime: Tuple of (min, max) sleep between steps. Defaults to (0.00005, 0.00009).
+        print_coords: Whether to print coordinates. Defaults to True.
+    """
     natural_mouse_movement_relative(
         x,
         y,
@@ -1428,6 +1870,11 @@ def middle_click_xy_relative(
 
 
 def is_cursor_shown():
+    """Check whether the mouse cursor is currently visible on screen.
+
+    Returns:
+        bool: True if the cursor is visible, False otherwise.
+    """
     GetCursorInfo = ctypes.windll.user32.GetCursorInfo
     GetCursorInfo.argtypes = [ctypes.POINTER(CURSORINFO)]
     info = CURSORINFO()
@@ -1439,6 +1886,11 @@ def is_cursor_shown():
 
 
 def get_active_window():
+    """Get information about the currently active (foreground) window.
+
+    Returns:
+        WindowInfo: A namedtuple with details about the active window, or an empty list if not found.
+    """
     pid = ctypes.wintypes.DWORD()
     active = ctypes.windll.user32.GetForegroundWindow()
     active_window = ctypes.windll.user32.GetWindowThreadProcessId(
@@ -1457,16 +1909,26 @@ def get_active_window():
         return []
 
 
-DEBUG = 0
-INPUT_KEYBOARD = 1
-KEYEVENTF_EXTENDEDKEY = 1
-KEYEVENTF_KEYUP = 2
-KEYEVENTF_UNICODE = 4
-KEYEVENTF_SCANCODE = 8
-VK_SHIFT = 16
-VK_CONTROL = 17
-VK_MENU = 18
+DEBUG = 0  # Debug flag, used for debugging purposes
+INPUT_KEYBOARD = 1  # Represents keyboard input for the SendInput function
 
+# Keyboard event flags
+# These flags are used to specify the type of keyboard event in the SendInput function.
+KEYEVENTF_EXTENDEDKEY = 1  # Indicates an extended key (e.g., arrow keys, function keys)
+KEYEVENTF_KEYUP = 2  # Indicates a key release (key up event)
+KEYEVENTF_UNICODE = 4  # Indicates a Unicode character input
+KEYEVENTF_SCANCODE = 8  # Indicates a scan code input
+
+# Virtual-Key Codes for Modifier Keys
+# These codes represent specific keys on the keyboard and are used in Windows API functions.
+VK_SHIFT = 16  # SHIFT key
+VK_CONTROL = 17  # CTRL key
+VK_MENU = 18  # ALT key
+
+# CODES dictionary
+# Maps key names (including aliases) to their virtual key codes.
+# Used for parsing key sequences and handling key events programmatically.
+# Example: CODES["DELETE"] retrieves the virtual key code for the DELETE key.
 CODES = {
     "BACK": 8,
     "BACKSPACE": 8,
@@ -1686,11 +2148,13 @@ https://pywinauto.readthedocs.io/en/latest/
 
 
 class KeySequenceError(Exception):
+    """Exception raised when a key sequence string cannot be parsed."""
     def __str__(self):
         return " ".join(self.args)
 
 
 class UNION_INPUT_STRUCTS(Union):
+    """Union of MOUSEINPUT, KEYBDINPUT, and HARDWAREINPUT for the INPUTX structure."""
     _fields_ = [
         ("mi", MOUSEINPUT),
         ("ki", KEYBDINPUT),
@@ -1699,6 +2163,7 @@ class UNION_INPUT_STRUCTS(Union):
 
 
 class INPUTX(Structure):
+    """Extended INPUT structure with 8-byte packing, used by the pywinauto-based key sending path."""
     _pack_ = 8
     _anonymous_ = ("_",)
     _fields_ = [
@@ -1707,6 +2172,30 @@ class INPUTX(Structure):
     ]
 
 
+# Declares at a higher level a function SendInput(nInputs: int, pInputs: POINTER(INPUT), cbSize: int) -> int
+# This function is a high-level abstraction for the low-level Windows API SendInput function.
+# It allows sending synthetic input events (keyboard, mouse, or hardware) to the system.
+# Example:
+#     def send_input(nInputs: int, pInputs: POINTER(INPUT), cbSize: int) -> int:
+#         """
+#         High-level wrapper for the SendInput function.
+#         
+#         Args:
+#             nInputs: Number of input events to insert.
+#             pInputs: Pointer to an array of INPUT structures describing the input events.
+#             cbSize: Size of the INPUT structure in bytes.
+#         
+#         Returns:
+#             int: The number of events successfully inserted into the input stream.
+#         
+#         Raises:
+#             RuntimeError: If no events were successfully inserted.
+#         """
+#         result = ctypes.windll.user32.SendInput(nInputs, pInputs, cbSize)
+#         if result == 0:
+#             raise RuntimeError("Failed to send input events")
+#         return result
+#
 SendInput = ctypes.windll.user32.SendInput
 SendInput.restype = wintypes.UINT
 SendInput.argtypes = [
@@ -1715,17 +2204,27 @@ SendInput.argtypes = [
     ctypes.c_int,
 ]
 
+# Declares at a higher level a function GetMessageExtraInfo() -> int
+# This function retrieves extra message information for the current thread's message queue.
+# Example:
+#     def get_message_extra_info() -> int:
+#         """
+#         High-level wrapper for the GetMessageExtraInfo function.
+#         
+#         Returns:
+#             int: Extra message information for the current thread's message queue.
+#         """
+#         return ctypes.windll.user32.GetMessageExtraInfo()
 GetMessageExtraInfo = ctypes.windll.user32.GetMessageExtraInfo
 
 
 class KeyAction(object):
-    # from https://pywinauto.readthedocs.io/
-
     """
     Class that represents a single keyboard action
     It represents either a PAUSE action (not really keyboard) or a keyboard
     action (press or release or both) of a particular key.
     """
+    # from https://pywinauto.readthedocs.io/
 
     def __init__(self, key, down=True, up=True):
         self.key = key
@@ -2120,20 +2619,47 @@ def send_keys(
         deactivate_topmost(handle)
 
 
-PBYTE256 = ctypes.c_ubyte * 256
-WM_ACTIVATE = 0x0006
-WA_ACTIVE = 1
-WM_SYSKEYDOWN = 0x0104
-WM_SYSKEYUP = 0x0105
-WM_KEYDOWN = 0x0100
-WM_KEYUP = 0x0101
+PBYTE256 = ctypes.c_ubyte * 256  # Represents an array of 256 unsigned bytes, used for keyboard state
+WM_ACTIVATE = 0x0006  # Message sent when a window is activated or deactivated
+WA_ACTIVE = 1  # Indicates that the window is being activated
+WM_SYSKEYDOWN = 0x0104  # Message sent when a system key (e.g., ALT) is pressed
+WM_SYSKEYUP = 0x0105  # Message sent when a system key (e.g., ALT) is released
+WM_KEYDOWN = 0x0100  # Message sent when a non-system key is pressed
+WM_KEYUP = 0x0101  # Message sent when a non-system key is released
 
+
+# Declares at a higher level a function GetKeyboardState(state: POINTER(c_ubyte)) -> bool
+# Example:
+#     def get_keyboard_state(state: POINTER(ctypes.c_ubyte)) -> bool:
+#         """Retrieves the status of the 256 virtual keys.
+#
+#         Args:
+#             state: A pointer to a 256-byte array that receives the key states.
+#
+#         Returns:
+#             bool: True if successful, False otherwise.
+#         """
+#         return ctypes.windll.user32.GetKeyboardState(state)
 GetKeyboardState = ctypes.windll.user32.GetKeyboardState
 GetKeyboardState.restype = wintypes.BOOL
 GetKeyboardState.argtypes = [
     POINTER(ctypes.c_ubyte),
 ]
 
+# Declares at a higher level a function GetWindowThreadProcessId(hwnd: HWND, lpdwProcessId: POINTER(DWORD)) -> DWORD
+# Example:
+#     def get_window_thread_process_id(hwnd: wintypes.HWND) -> tuple[int, int]:
+#         """Retrieves the thread and process ID of the window's creating thread.
+#
+#         Args:
+#             hwnd: Handle to the window.
+#
+#         Returns:
+#             tuple[int, int]: A tuple of (thread_id, process_id).
+#         """
+#         pid = wintypes.DWORD()
+#         tid = ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+#         return tid, pid.value
 GetWindowThreadProcessId = ctypes.windll.user32.GetWindowThreadProcessId
 GetWindowThreadProcessId.restype = wintypes.DWORD
 GetWindowThreadProcessId.argtypes = [
@@ -2141,46 +2667,182 @@ GetWindowThreadProcessId.argtypes = [
     POINTER(wintypes.DWORD),
 ]
 
+# Declares at a higher level a function GetCurrentThreadId() -> DWORD
+# Example:
+#     def get_current_thread_id() -> int:
+#         """Retrieves the thread ID of the calling thread.
+#
+#         Returns:
+#             int: The thread ID of the calling thread.
+#         """
+#         return ctypes.windll.kernel32.GetCurrentThreadId()
+# Declares on low level a function GetCurrentThreadId() -> DWORD
 GetCurrentThreadId = ctypes.windll.kernel32.GetCurrentThreadId
 GetCurrentThreadId.restype = wintypes.DWORD
 GetCurrentThreadId.argtypes = []
+
+# Declares at a higher level a function GetWindowThreadProcessId(hwnd: HWND, lpdwProcessId: POINTER(DWORD)) -> DWORD
+# Example:
+#     def get_window_thread_process_id(hwnd: wintypes.HWND) -> tuple[int, int]:
+#         """Retrieves the thread and process ID of the window's creating thread.
+#
+#         Args:
+#             hwnd: Handle to the window.
+#
+#         Returns:
+#             tuple[int, int]: A tuple of (thread_id, process_id).
+#         """
+#         pid = wintypes.DWORD()
+#         tid = ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+#         return tid, pid.value
+# Declares on low level a function GetWindowThreadProcessId(hwnd: HWND, lpdwProcessId: POINTER(DWORD)) -> DWORD
 GetWindowThreadProcessId = ctypes.windll.user32.GetWindowThreadProcessId
 GetWindowThreadProcessId.restype = wintypes.DWORD
 GetWindowThreadProcessId.argtypes = [
     wintypes.HWND,
     POINTER(wintypes.DWORD),
 ]
+
+# Declares at a higher level a function AttachThreadInput(idAttach: DWORD, idAttachTo: DWORD, fAttach: BOOL) -> BOOL
+# Example:
+#     def attach_thread_input(idAttach: int, idAttachTo: int, fAttach: bool) -> bool:
+#         """Attaches or detaches the input processing of one thread to another.
+#
+#         Args:
+#             idAttach: ID of the thread to attach.
+#             idAttachTo: ID of the thread to attach to.
+#             fAttach: True to attach, False to detach.
+#
+#         Returns:
+#             bool: True if successful, False otherwise.
+#         """
+#         return ctypes.windll.user32.AttachThreadInput(idAttach, idAttachTo, fAttach)
 AttachThreadInput = ctypes.windll.user32.AttachThreadInput
 AttachThreadInput.restype = wintypes.BOOL
 AttachThreadInput.argtypes = [wintypes.DWORD, wintypes.DWORD, wintypes.BOOL]
+
+# Declares at a higher level a function GetKeyboardLayout(idThread: DWORD) -> HKL
+# Example:
+#     def get_keyboard_layout(thread_id: int) -> wintypes.HKL:
+#         """Retrieves the active input locale identifier (keyboard layout) for a thread.
+#
+#         Args:
+#             thread_id: The thread ID. Use 0 for the current thread.
+#
+#         Returns:
+#             wintypes.HKL: Handle to the keyboard layout.
+#         """
+#         return ctypes.windll.user32.GetKeyboardLayout(thread_id)
 GetKeyboardLayout = ctypes.windll.user32.GetKeyboardLayout
 GetKeyboardLayout.restype = wintypes.HKL
 GetKeyboardLayout.argtypes = [
     wintypes.DWORD,
 ]
+
+# Declares at a higher level a function VkKeyScanW(ch: WCHAR) -> SHORT
+# Example:
+#     def vk_key_scan_w(ch: str) -> int:
+#         """Translates a Unicode character to the virtual-key code and shift state.
+#
+#         Args:
+#             ch: The Unicode character to translate.
+#
+#         Returns:
+#             int: The virtual-key code and shift state packed into a SHORT.
+#         """
+#         return ctypes.windll.user32.VkKeyScanW(ch)
 VkKeyScanW = ctypes.windll.user32.VkKeyScanW
 VkKeyScanW.restype = SHORT
 VkKeyScanW.argtypes = [
     wintypes.WCHAR,
 ]
+
+# Declares at a higher level a function VkKeyScanExW(ch: WCHAR, dwhkl: HKL) -> SHORT
+# Example:
+#     def vk_key_scan_ex_w(ch: str, dwhkl: wintypes.HKL) -> int:
+#         """Translates a Unicode character to a virtual-key code for a specific keyboard layout.
+#
+#         Args:
+#             ch: The Unicode character to translate.
+#             dwhkl: Handle to the keyboard layout used to translate the character.
+#
+#         Returns:
+#             int: The virtual-key code and shift state packed into a SHORT.
+#         """
+#         return ctypes.windll.user32.VkKeyScanExW(ch, dwhkl)
 VkKeyScanExW = ctypes.windll.user32.VkKeyScanExW
 VkKeyScanExW.restype = SHORT
 VkKeyScanExW.argtypes = [
     wintypes.WCHAR,
     wintypes.HKL,
 ]
+
+# Declares at a higher level a function SetKeyboardState(lpKeyState: POINTER(c_ubyte)) -> bool
+# Example:
+#     def set_keyboard_state(state: POINTER(ctypes.c_ubyte)) -> bool:
+#         """Sets the status of the 256 virtual keys.
+#
+#         Args:
+#             state: A pointer to a 256-byte array containing the new key states.
+#
+#         Returns:
+#             bool: True if successful, False otherwise.
+#         """
+#         return ctypes.windll.user32.SetKeyboardState(state)
 SetKeyboardState = ctypes.windll.user32.SetKeyboardState
 SetKeyboardState.restype = wintypes.BOOL
 SetKeyboardState.argtypes = [
     POINTER(ctypes.c_ubyte),
 ]
+
+# Declares at a higher level a function MapVirtualKeyW(uCode: UINT, uMapType: UINT) -> UINT
+# Example:
+#     def map_virtual_key_w(uCode: int, uMapType: int) -> int:
+#         """Translates a virtual-key code into a scan code or character value.
+#
+#         Args:
+#             uCode: The virtual-key code or scan code to translate.
+#             uMapType: The translation to perform (e.g., MAPVK_VK_TO_VSC).
+#
+#         Returns:
+#             int: The translated value, or 0 if no translation exists.
+#         """
+#         return ctypes.windll.user32.MapVirtualKeyW(uCode, uMapType)
 MapVirtualKeyW = ctypes.windll.user32.MapVirtualKeyW
+
+# Declares at a higher level a function DrawMenuBar(hWnd: HWND) -> bool
+# Example:
+#     def draw_menu_bar(hwnd: wintypes.HWND) -> bool:
+#         """Redraws the menu bar of the specified window.
+#
+#         Args:
+#             hwnd: Handle to the window whose menu bar to redraw.
+#
+#         Returns:
+#             bool: True if successful, False otherwise.
+#         """
+#         return ctypes.windll.user32.DrawMenuBar(hwnd)
 DrawMenuBar = ctypes.windll.user32.DrawMenuBar
 DrawMenuBar.restype = wintypes.BOOL
 DrawMenuBar.argstype = [
     wintypes.HWND,
 ]
 
+# Declares at a higher level a function PostMessage(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> bool
+# Example:
+#     def post_message(hwnd: wintypes.HWND, msg: int, wParam: int, lParam: int) -> bool:
+#         """Posts a message to the message queue of the specified window without waiting.
+#
+#         Args:
+#             hwnd: Handle to the window.
+#             msg: The message to post.
+#             wParam: Additional message-specific information.
+#             lParam: Additional message-specific information.
+#
+#         Returns:
+#             bool: True if successful, False otherwise.
+#         """
+#         return ctypes.windll.user32.PostMessageW(hwnd, msg, wParam, lParam)
 PostMessage = ctypes.windll.user32.PostMessageW
 PostMessage.restype = wintypes.BOOL
 PostMessage.argtypes = [
@@ -2189,6 +2851,23 @@ PostMessage.argtypes = [
     wintypes.WPARAM,
     wintypes.LPARAM,
 ]
+
+# Declares at a higher level a function GetMessage(lpMsg: POINTER(MSG), hWnd: HWND, wMsgFilterMin: UINT, wMsgFilterMax: UINT) -> bool
+# Example:
+#     def get_message(hwnd: wintypes.HWND, filter_min: int = 0, filter_max: int = 0) -> wintypes.MSG:
+#         """Retrieves a message from the thread's message queue, blocking until one is available.
+#
+#         Args:
+#             hwnd: Handle to the window whose messages are retrieved. None retrieves all.
+#             filter_min: Minimum message value to retrieve.
+#             filter_max: Maximum message value to retrieve.
+#
+#         Returns:
+#             wintypes.MSG: The retrieved message structure.
+#         """
+#         msg = wintypes.MSG()
+#         ctypes.windll.user32.GetMessageW(ctypes.byref(msg), hwnd, filter_min, filter_max)
+#         return msg
 GetMessage = ctypes.windll.user32.GetMessageW
 GetMessage.restype = wintypes.BOOL
 GetMessage.argtypes = [
@@ -2198,11 +2877,48 @@ GetMessage.argtypes = [
     wintypes.UINT,
 ]
 
+# Declares at a higher level a function SendMessageW(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> int
+# Example:
+#     def send_message(hwnd: wintypes.HWND, msg: int, wParam: int, lParam: int) -> int:
+#         """Sends a message to the specified window and waits for it to be processed.
+#
+#         Args:
+#             hwnd: Handle to the window.
+#             msg: The message to send.
+#             wParam: Additional message-specific information.
+#             lParam: Additional message-specific information.
+#
+#         Returns:
+#             int: The result of the message processing.
+#         """
+#         return ctypes.windll.user32.SendMessageW(hwnd, msg, wParam, lParam)
 SendMessage = ctypes.windll.user32.SendMessageW
+
+# Declares at a higher level a function SendMessageA(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> int
+# Example:
+#     def send_message_a(hwnd: wintypes.HWND, msg: int, wParam: int, lParam: int) -> int:
+#         """Sends an ANSI message to the specified window and waits for it to be processed.
+#
+#         Args:
+#             hwnd: Handle to the window.
+#             msg: The message to send.
+#             wParam: Additional message-specific information.
+#             lParam: Additional message-specific information.
+#
+#         Returns:
+#             int: The result of the message processing.
+#         """
+#         return ctypes.windll.user32.SendMessageA(hwnd, msg, wParam, lParam)
+# Declares on low level a function SendMessageA(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> int
 SendMessageA = ctypes.windll.user32.SendMessageA
 
 
 def activate_topmost(hwnd):
+    """Bring a window to the top and set it as the topmost (always-on-top) window.
+
+    Args:
+        hwnd: Handle to the window to activate.
+    """
     ctypes.windll.user32.BringWindowToTop(hwnd)  # works OK
     HWND_TOPMOST = -1
     SWP_NOSIZE = 1
@@ -2216,6 +2932,14 @@ def activate_topmost(hwnd):
 
 
 def force_activate_window(hwnd):
+    """Forcefully activate a window by setting it topmost, sending a resize message, and clicking.
+
+    Uses a background thread to send WM_SYSCOMMAND/SC_SIZE, then clicks to finalize activation,
+    and finally removes the topmost flag.
+
+    Args:
+        hwnd: Handle to the window to force-activate.
+    """
     activate_topmost(hwnd)
     time.sleep(0.01)
     WM_SYSCOMMAND = ctypes.c_int(0x0112)
@@ -2234,11 +2958,24 @@ def force_activate_window(hwnd):
 
 
 def deactivate_topmost(hwnd):
+    """Remove the topmost (always-on-top) flag from a window.
+
+    Args:
+        hwnd: Handle to the window to deactivate from topmost.
+    """
     activate_window(hwnd)
     activate_window(hwnd)
 
 
 def activate_window(hwnd):
+    """Activate a window by cycling its Z-order position and bringing it to the foreground.
+
+    Sets the window to topmost, then non-topmost, and finally brings it to the front.
+    Also restores minimized windows.
+
+    Args:
+        hwnd: Handle to the window to activate.
+    """
     HWND_TOPMOST = -1
     SWP_NOSIZE = 1
     SWP_NOMOVE = 2
@@ -2256,6 +2993,15 @@ def activate_window(hwnd):
 
 
 def EnableWindow(hWnd, bEnable=True):
+    """Enable or disable mouse and keyboard input to a window.
+
+    Args:
+        hWnd: Handle to the window.
+        bEnable: True to enable input, False to disable. Defaults to True.
+
+    Returns:
+        bool: True if the window was previously disabled, False otherwise.
+    """
     _EnableWindow = ctypes.windll.user32.EnableWindow
     _EnableWindow.argtypes = [HWND, BOOL]
     _EnableWindow.restype = bool
@@ -2263,6 +3009,11 @@ def EnableWindow(hWnd, bEnable=True):
 
 
 def get_fg_window():
+    """Get the element information for the current foreground window.
+
+    Returns:
+        WindowInfo: A namedtuple with details about the foreground window.
+    """
     return _get_elements_from_coords(hwnd=ctypes.windll.user32.GetForegroundWindow())[
         "element"
     ]
@@ -2406,14 +3157,41 @@ def send_keystrokes(
 
 
 def get_single_element_from_coord(x, y):
+    """Get a single WindowInfo element at the given screen coordinates.
+
+    Args:
+        x: The x screen coordinate.
+        y: The y screen coordinate.
+
+    Returns:
+        WindowInfo: The window element found at the coordinates.
+    """
     return _get_elements_from_coords(coordx=x, coordy=y)["element"]
 
 
 def get_single_element_from_hwnd(hwnd):
+    """Get a single WindowInfo element for the given window handle.
+
+    Args:
+        hwnd: The window handle to look up.
+
+    Returns:
+        WindowInfo: The window element for the given handle.
+    """
     return _get_elements_from_coords(hwnd=hwnd)["element"]
 
 
 def press_multiple_keys(keystopress, presstime=1.1, percentofregularpresstime=100):
+    """Press multiple keys simultaneously with logarithmically distributed timing.
+
+    Each key is started in a separate thread with staggered start times
+    based on a logarithmic split of the total press duration.
+
+    Args:
+        keystopress: A list of key codes to press simultaneously.
+        presstime: Total duration in seconds for all key presses. Defaults to 1.1.
+        percentofregularpresstime: Scale factor for individual key hold times. Defaults to 100.
+    """
     presstime *= 10000
     presstime = int(presstime)
     segtim = presstime / 200000
@@ -2442,6 +3220,16 @@ def press_multiple_keys(keystopress, presstime=1.1, percentofregularpresstime=10
 
 
 def press_multiple_keys_own_interval(keystopress, presstime=1.1):
+    """Press multiple keys with individually specified start times.
+
+    Each element in keystopress is a [start_time, key_code] pair.
+    Keys are pressed in separate threads with their hold duration
+    calculated from the total presstime minus their start offset.
+
+    Args:
+        keystopress: A list of [start_time, key_code] pairs.
+        presstime: Total duration in seconds for all key presses. Defaults to 1.1.
+    """
     totalpresstime = presstime
 
     sleeptimeall = np.hstack(
@@ -2465,14 +3253,32 @@ def press_multiple_keys_own_interval(keystopress, presstime=1.1):
 
 
 def block_user_input():
+    """Block all mouse and keyboard input from the user.
+
+    Requires administrator privileges. Call unblock_user_input() to restore input.
+
+    Returns:
+        bool: True if input was successfully blocked.
+    """
     return BlockInput(True)
 
 
 def unblock_user_input():
+    """Unblock mouse and keyboard input previously blocked by block_user_input().
+
+    Returns:
+        bool: True if input was successfully unblocked.
+    """
     return BlockInput(False)
 
 
 class MouseKey:
+    """High-level interface for mouse and keyboard automation on Windows.
+
+    Wraps all module-level mouse/keyboard functions as instance methods,
+    providing a convenient unified API for cursor movement, clicking,
+    key pressing, window management, and input blocking.
+    """
     def __init__(self):
         self.block_user_input = block_user_input
         self.unblock_user_input = unblock_user_input
@@ -2524,16 +3330,26 @@ class MouseKey:
         self.show_cur = False
 
     def _kill_coord(self):
+        """Hotkey callback to stop the cursor position display and re-enable it after a brief pause."""
         self.show_cur = False
         time.sleep(0.05)
         self.show_cur = True
 
     def force_activate_window(self, hwnd):
+        """Force-activate a window and then remove its topmost flag.
+
+        Args:
+            hwnd: Handle to the window to activate.
+
+        Returns:
+            MouseKey: self, for method chaining.
+        """
         self.force_activate_window(hwnd)
         self.deactivate_topmost(hwnd)
         return self
 
     def _get_cursor(self):
+        """Internal loop that continuously prints the current cursor position until stopped."""
         while True:
             if self.show_cur is False:
                 break
@@ -2541,6 +3357,11 @@ class MouseKey:
             print(f"{get_cursor()}         ", end="\r")
 
     def start_showing_cursor_position(self, exit_keys="ctrl+l"):
+        """Start printing the cursor position in real time in a background thread.
+
+        Args:
+            exit_keys: Hotkey combination to stop the display. Defaults to 'ctrl+l'.
+        """
         try:
             key_b.remove_hotkey(exit_keys)
         except Exception:
@@ -2563,6 +3384,7 @@ class MouseKey:
             self.t.start()
 
     def stop_showing_cursor_position(self):
+        """Stop the background cursor position display."""
         self.show_cur = False
 
     def show_rgb_values_at_mouse_position(
@@ -2575,6 +3397,20 @@ class MouseKey:
             coords=True,
             time_value=True,
     ):
+        """Display RGB/RGBA color values at the current mouse position.
+
+        Args:
+            sleeptime: Polling interval in seconds. Defaults to 0.01.
+            on_left_click: Only capture on left click. Defaults to False.
+            on_right_click: Only capture on right click. Defaults to False.
+            rgb_values: Include RGB values in output. Defaults to True.
+            rgba_values: Include RGBA values in output. Defaults to True.
+            coords: Include cursor coordinates in output. Defaults to True.
+            time_value: Include timestamp in output. Defaults to True.
+
+        Returns:
+            The color and position data from get_rgb_values.
+        """
         return get_rgb_values(
             sleeptime=sleeptime,
             on_left_click=on_left_click,
