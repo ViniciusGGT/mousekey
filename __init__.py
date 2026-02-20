@@ -1416,7 +1416,7 @@ def calculate_all_coords(ends):
     d0, d1 = np.diff(ends, axis=0)[0]
     
     if d0 == 0 and d1 == 0:
-        return ends
+        return ends[[0]].astype(np.int32, copy=False)
     
     if d0 == 0:
         return np.c_[
