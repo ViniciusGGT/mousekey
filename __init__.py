@@ -26,7 +26,7 @@ from ctypes_rgb_values import get_rgb_values
 from ctypes_window_info import get_window_infos
 from flatten_everything import flatten_everything, ProtectedTuple
 
-# Declares at a higher level a function BlockInput(fBlockIt: bool) -> bool
+# Declares at a lower level a function BlockInput(fBlockIt: bool) -> bool
 # Example:
 #     def block_input(fBlockIt: bool) -> bool:
 #         """Blocks or unblocks keyboard and mouse input events from reaching applications.
@@ -38,14 +38,11 @@ from flatten_everything import flatten_everything, ProtectedTuple
 #             bool: True if successful, False otherwise.
 #         """
 #         return ctypes.windll.user32.BlockInput(fBlockIt)
-# Declares on low level a function BlockInput(bool) -> bool
-# When BlockInput(True) is called it blocks user input,
-# When BlockInput(False) is called it unblocks user input
 BlockInput = ctypes.windll.user32.BlockInput
 BlockInput.argtypes = [wintypes.BOOL]
 BlockInput.restype = wintypes.BOOL
 
-# Declares at a higher level a module-level shared state accessor using sys.modules[__name__]
+# Declares at a lower level a module-level shared state accessor using sys.modules[__name__]
 # This pattern allows the module to store and mutate its own attributes at runtime,
 # making state (like `rightnow`) accessible and modifiable from anywhere that imports the module.
 # Example:
@@ -1198,7 +1195,7 @@ def _check_count(result, func, args):
     return args
 
 
-# Declares at a higher level a function SendInput(nInputs: int, pInputs: LPINPUT, cbSize: int) -> int
+# Declares at a lower level a function SendInput(nInputs: int, pInputs: LPINPUT, cbSize: int) -> int
 # This function is a high-level abstraction for the low-level Windows API SendInput function.
 # It allows sending synthetic input events (keyboard, mouse, or hardware) to the system.
 # Example:
@@ -1241,7 +1238,7 @@ class DUMMYUNIONNAME(Union):
     _fields_ = [("mi", MOUSEINPUT), ("ki", KEYBDINPUT), ("hi", HARDWAREINPUT)]
 
 
-# Declares at a higher level a function SendInput(nInputs: int, pInputs: POINTER(INPUT), cbSize: int) -> int
+# Declares at a lower level a function SendInput(nInputs: int, pInputs: POINTER(INPUT), cbSize: int) -> int
 # This function is a high-level abstraction for the low-level Windows API SendInput function.
 # It allows sending synthetic input events (keyboard, mouse, or hardware) to the system.
 # Example:
@@ -2172,7 +2169,7 @@ class INPUTX(Structure):
     ]
 
 
-# Declares at a higher level a function SendInput(nInputs: int, pInputs: POINTER(INPUT), cbSize: int) -> int
+# Declares at a lower level a function SendInput(nInputs: int, pInputs: POINTER(INPUT), cbSize: int) -> int
 # This function is a high-level abstraction for the low-level Windows API SendInput function.
 # It allows sending synthetic input events (keyboard, mouse, or hardware) to the system.
 # Example:
@@ -2204,7 +2201,7 @@ SendInput.argtypes = [
     ctypes.c_int,
 ]
 
-# Declares at a higher level a function GetMessageExtraInfo() -> int
+# Declares at a lower level a function GetMessageExtraInfo() -> int
 # This function retrieves extra message information for the current thread's message queue.
 # Example:
 #     def get_message_extra_info() -> int:
@@ -2628,7 +2625,7 @@ WM_KEYDOWN = 0x0100  # Message sent when a non-system key is pressed
 WM_KEYUP = 0x0101  # Message sent when a non-system key is released
 
 
-# Declares at a higher level a function GetKeyboardState(state: POINTER(c_ubyte)) -> bool
+# Declares at a lower level a function GetKeyboardState(state: POINTER(c_ubyte)) -> bool
 # Example:
 #     def get_keyboard_state(state: POINTER(ctypes.c_ubyte)) -> bool:
 #         """Retrieves the status of the 256 virtual keys.
@@ -2646,7 +2643,7 @@ GetKeyboardState.argtypes = [
     POINTER(ctypes.c_ubyte),
 ]
 
-# Declares at a higher level a function GetWindowThreadProcessId(hwnd: HWND, lpdwProcessId: POINTER(DWORD)) -> DWORD
+# Declares at a lower level a function GetWindowThreadProcessId(hwnd: HWND, lpdwProcessId: POINTER(DWORD)) -> DWORD
 # Example:
 #     def get_window_thread_process_id(hwnd: wintypes.HWND) -> tuple[int, int]:
 #         """Retrieves the thread and process ID of the window's creating thread.
@@ -2667,7 +2664,7 @@ GetWindowThreadProcessId.argtypes = [
     POINTER(wintypes.DWORD),
 ]
 
-# Declares at a higher level a function GetCurrentThreadId() -> DWORD
+# Declares at a lower level a function GetCurrentThreadId() -> DWORD
 # Example:
 #     def get_current_thread_id() -> int:
 #         """Retrieves the thread ID of the calling thread.
@@ -2681,7 +2678,7 @@ GetCurrentThreadId = ctypes.windll.kernel32.GetCurrentThreadId
 GetCurrentThreadId.restype = wintypes.DWORD
 GetCurrentThreadId.argtypes = []
 
-# Declares at a higher level a function GetWindowThreadProcessId(hwnd: HWND, lpdwProcessId: POINTER(DWORD)) -> DWORD
+# Declares at a lower level a function GetWindowThreadProcessId(hwnd: HWND, lpdwProcessId: POINTER(DWORD)) -> DWORD
 # Example:
 #     def get_window_thread_process_id(hwnd: wintypes.HWND) -> tuple[int, int]:
 #         """Retrieves the thread and process ID of the window's creating thread.
@@ -2703,7 +2700,7 @@ GetWindowThreadProcessId.argtypes = [
     POINTER(wintypes.DWORD),
 ]
 
-# Declares at a higher level a function AttachThreadInput(idAttach: DWORD, idAttachTo: DWORD, fAttach: BOOL) -> BOOL
+# Declares at a lower level a function AttachThreadInput(idAttach: DWORD, idAttachTo: DWORD, fAttach: BOOL) -> BOOL
 # Example:
 #     def attach_thread_input(idAttach: int, idAttachTo: int, fAttach: bool) -> bool:
 #         """Attaches or detaches the input processing of one thread to another.
@@ -2721,7 +2718,7 @@ AttachThreadInput = ctypes.windll.user32.AttachThreadInput
 AttachThreadInput.restype = wintypes.BOOL
 AttachThreadInput.argtypes = [wintypes.DWORD, wintypes.DWORD, wintypes.BOOL]
 
-# Declares at a higher level a function GetKeyboardLayout(idThread: DWORD) -> HKL
+# Declares at a lower level a function GetKeyboardLayout(idThread: DWORD) -> HKL
 # Example:
 #     def get_keyboard_layout(thread_id: int) -> wintypes.HKL:
 #         """Retrieves the active input locale identifier (keyboard layout) for a thread.
@@ -2739,7 +2736,7 @@ GetKeyboardLayout.argtypes = [
     wintypes.DWORD,
 ]
 
-# Declares at a higher level a function VkKeyScanW(ch: WCHAR) -> SHORT
+# Declares at a lower level a function VkKeyScanW(ch: WCHAR) -> SHORT
 # Example:
 #     def vk_key_scan_w(ch: str) -> int:
 #         """Translates a Unicode character to the virtual-key code and shift state.
@@ -2757,7 +2754,7 @@ VkKeyScanW.argtypes = [
     wintypes.WCHAR,
 ]
 
-# Declares at a higher level a function VkKeyScanExW(ch: WCHAR, dwhkl: HKL) -> SHORT
+# Declares at a lower level a function VkKeyScanExW(ch: WCHAR, dwhkl: HKL) -> SHORT
 # Example:
 #     def vk_key_scan_ex_w(ch: str, dwhkl: wintypes.HKL) -> int:
 #         """Translates a Unicode character to a virtual-key code for a specific keyboard layout.
@@ -2777,7 +2774,7 @@ VkKeyScanExW.argtypes = [
     wintypes.HKL,
 ]
 
-# Declares at a higher level a function SetKeyboardState(lpKeyState: POINTER(c_ubyte)) -> bool
+# Declares at a lower level a function SetKeyboardState(lpKeyState: POINTER(c_ubyte)) -> bool
 # Example:
 #     def set_keyboard_state(state: POINTER(ctypes.c_ubyte)) -> bool:
 #         """Sets the status of the 256 virtual keys.
@@ -2795,7 +2792,7 @@ SetKeyboardState.argtypes = [
     POINTER(ctypes.c_ubyte),
 ]
 
-# Declares at a higher level a function MapVirtualKeyW(uCode: UINT, uMapType: UINT) -> UINT
+# Declares at a lower level a function MapVirtualKeyW(uCode: UINT, uMapType: UINT) -> UINT
 # Example:
 #     def map_virtual_key_w(uCode: int, uMapType: int) -> int:
 #         """Translates a virtual-key code into a scan code or character value.
@@ -2810,7 +2807,7 @@ SetKeyboardState.argtypes = [
 #         return ctypes.windll.user32.MapVirtualKeyW(uCode, uMapType)
 MapVirtualKeyW = ctypes.windll.user32.MapVirtualKeyW
 
-# Declares at a higher level a function DrawMenuBar(hWnd: HWND) -> bool
+# Declares at a lower level a function DrawMenuBar(hWnd: HWND) -> bool
 # Example:
 #     def draw_menu_bar(hwnd: wintypes.HWND) -> bool:
 #         """Redraws the menu bar of the specified window.
@@ -2828,7 +2825,7 @@ DrawMenuBar.argstype = [
     wintypes.HWND,
 ]
 
-# Declares at a higher level a function PostMessage(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> bool
+# Declares at a lower level a function PostMessage(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> bool
 # Example:
 #     def post_message(hwnd: wintypes.HWND, msg: int, wParam: int, lParam: int) -> bool:
 #         """Posts a message to the message queue of the specified window without waiting.
@@ -2852,7 +2849,7 @@ PostMessage.argtypes = [
     wintypes.LPARAM,
 ]
 
-# Declares at a higher level a function GetMessage(lpMsg: POINTER(MSG), hWnd: HWND, wMsgFilterMin: UINT, wMsgFilterMax: UINT) -> bool
+# Declares at a lower level a function GetMessage(lpMsg: POINTER(MSG), hWnd: HWND, wMsgFilterMin: UINT, wMsgFilterMax: UINT) -> bool
 # Example:
 #     def get_message(hwnd: wintypes.HWND, filter_min: int = 0, filter_max: int = 0) -> wintypes.MSG:
 #         """Retrieves a message from the thread's message queue, blocking until one is available.
@@ -2877,7 +2874,7 @@ GetMessage.argtypes = [
     wintypes.UINT,
 ]
 
-# Declares at a higher level a function SendMessageW(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> int
+# Declares at a lower level a function SendMessageW(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> int
 # Example:
 #     def send_message(hwnd: wintypes.HWND, msg: int, wParam: int, lParam: int) -> int:
 #         """Sends a message to the specified window and waits for it to be processed.
@@ -2894,7 +2891,7 @@ GetMessage.argtypes = [
 #         return ctypes.windll.user32.SendMessageW(hwnd, msg, wParam, lParam)
 SendMessage = ctypes.windll.user32.SendMessageW
 
-# Declares at a higher level a function SendMessageA(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> int
+# Declares at a lower level a function SendMessageA(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> int
 # Example:
 #     def send_message_a(hwnd: wintypes.HWND, msg: int, wParam: int, lParam: int) -> int:
 #         """Sends an ANSI message to the specified window and waits for it to be processed.
@@ -3420,3 +3417,4 @@ class MouseKey:
             coords=coords,
             time_value=time_value,
         )
+
